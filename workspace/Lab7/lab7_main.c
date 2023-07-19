@@ -1,7 +1,7 @@
 //#############################################################################
-// FILE:   lab6_main.c
+// FILE:   lab7_main.c
 //
-// TITLE:  Lab 6: DC Motor Speed Control and Steering a Three Wheel Robot Car
+// TITLE:  Lab 7:
 //#############################################################################
 
 // Included Files
