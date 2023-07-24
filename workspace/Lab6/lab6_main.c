@@ -44,6 +44,7 @@ uint16_t LEDdisplaynum = 0;
 // LAB 5: My variables
 void GPIO_setup(void);
 void SPI_setup(void);
+void EPWM_setup(void);
 __interrupt void SPIB_ISR(void);
 float numberToAcceleration(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-4, 4)
 float numberToRotVel(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-250, 250)

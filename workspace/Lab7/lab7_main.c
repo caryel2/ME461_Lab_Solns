@@ -26,27 +26,41 @@
 // The Launchpad's CPU Frequency set to 200 you should not change this value
 #define LAUNCHPAD_CPU_FREQUENCY 200
 
-// Interrupt Service Routines predefinition
+// ISR predefinitions
 __interrupt void cpu_timer0_isr(void);
 __interrupt void cpu_timer1_isr(void);
 __interrupt void cpu_timer2_isr(void);
 __interrupt void SWI_isr(void);
+__interrupt void SPIB_ISR(void);
+__interrupt void ADCA_ISR(void);
 
-float accelgain = 1.0;
+// Setup function predefinitions
+void GPIO_setup(void);
+void EPWM_setup(void);
+void SPI_setup(void);
+void ADC_setup(void);
+void DAC_setup(void);
+void eQEPs_setup(void);
 
-// Count variables
+// Helper function predefinitions
+float numberToAcceleration(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-4, 4)
+float numberToRotVel(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-250, 250)
+void setEPWM2A(float controleffort);
+void setEPWM2B(float controleffort);
+float readEncLeft(void);
+float readEncRight(void);
+void setDACA(float volts);
+void setDACB(float volts);
+
+// Variables
+    // Count variables
 uint32_t numTimer0calls = 0;
 uint32_t numSWIcalls = 0;
 extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
-
-// LAB 5: My variables
-void GPIO_setup(void);
-void SPI_setup(void);
-__interrupt void SPIB_ISR(void);
-float numberToAcceleration(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-4, 4)
-float numberToRotVel(int16_t value); // Converts given sensor reading from (-32768, 32767) to (-250, 250)
+    // ADC/DAC/SPI variables
+float accelgain = 1.0;
 int16_t spivalue1 = 0;
 int16_t spivalue2 = 0;
 int16_t DAN_PWM1 = 0;
@@ -63,18 +77,7 @@ float accelZ = 0.0;
 float gyroX = 0.0;
 float gyroY = 0.0;
 float gyroZ = 0.0;
-
-// LAB 6: My variables
-//     Functions
-void eQEPs_setup(void);
-void setEPWM2A(float controleffort);
-void setEPWM2B(float controleffort);
-float readEncLeft(void);
-float readEncRight(void);
-void setDACA(float volts);
-void setDACB(float volts);
-
-//     Exercise 1 & 2
+    // Motor control (lab 6) variables
 float leftWheelAngle = 0.0;
 float rightWheelAngle = 0.0;
 float uLeft = 5.0; // Initialize to 5 control effort (zero speed)
@@ -86,8 +89,6 @@ float posRight_1;
 float vLeft;
 float vRight;
 float rWheel = 0.19792;
-
-//     Exercise 3
 float Vref = 0;
 float Kp = 3.0;
 float Ki = 25.0;
@@ -99,13 +100,9 @@ float ILeft;
 float ILeft_1;
 float IRight;
 float IRight_1;
-
-//     Exercise 4
 float turn = 0;
 float Kp_turn = 3;
 float errTurn;
-
-//     Exercise 5: Robot pose
 float width = 0.576;
 float pose;
 float thetaAvg;
@@ -617,6 +614,80 @@ void SPI_setup(void) {
     PieCtrlRegs.PIEACK.all = PIEACK_GROUP6;
 }
 
+void ADC_setup(void) {
+    EALLOW;
+    //write configurations for all ADCs ADCA, ADCB, ADCC, ADCD
+    AdcaRegs.ADCCTL2.bit.PRESCALE = 6; //set ADCCLK divider to /4
+    AdcbRegs.ADCCTL2.bit.PRESCALE = 6; //set ADCCLK divider to /4
+    AdccRegs.ADCCTL2.bit.PRESCALE = 6; //set ADCCLK divider to /4
+    AdcdRegs.ADCCTL2.bit.PRESCALE = 6; //set ADCCLK divider to /4
+    AdcSetMode(ADC_ADCA, ADC_RESOLUTION_12BIT, ADC_SIGNALMODE_SINGLE); //read calibration settings
+    AdcSetMode(ADC_ADCB, ADC_RESOLUTION_12BIT, ADC_SIGNALMODE_SINGLE); //read calibration settings
+    AdcSetMode(ADC_ADCC, ADC_RESOLUTION_12BIT, ADC_SIGNALMODE_SINGLE); //read calibration settings
+    AdcSetMode(ADC_ADCD, ADC_RESOLUTION_12BIT, ADC_SIGNALMODE_SINGLE); //read calibration settings
+
+    //Set pulse positions to late
+    AdcaRegs.ADCCTL1.bit.INTPULSEPOS = 1;
+    AdcbRegs.ADCCTL1.bit.INTPULSEPOS = 1;
+    AdccRegs.ADCCTL1.bit.INTPULSEPOS = 1;
+    AdcdRegs.ADCCTL1.bit.INTPULSEPOS = 1;
+
+    //power up the ADCs
+    AdcaRegs.ADCCTL1.bit.ADCPWDNZ = 1;
+    AdcbRegs.ADCCTL1.bit.ADCPWDNZ = 1;
+    AdccRegs.ADCCTL1.bit.ADCPWDNZ = 1;
+    AdcdRegs.ADCCTL1.bit.ADCPWDNZ = 1;
+
+    //delay for 1ms to allow ADC time to power up
+    DELAY_US(1000);
+
+    //Select the channels to convert and end of conversion flag
+    //Many statements commented out, To be used when using ADCA or ADCB
+    //ADCA
+    AdcaRegs.ADCSOC0CTL.bit.CHSEL = 2; //SOC0 will convert Channel you choose Does not have to be A0
+    AdcaRegs.ADCSOC0CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcaRegs.ADCSOC0CTL.bit.TRIGSEL = 13;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC0
+    AdcaRegs.ADCSOC1CTL.bit.CHSEL = 3; //SOC1 will convert Channel you choose Does not have to be A1
+    AdcaRegs.ADCSOC1CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcaRegs.ADCSOC1CTL.bit.TRIGSEL = 13;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC1
+    AdcaRegs.ADCINTSEL1N2.bit.INT1SEL = 1; //set to last SOC that is converted and it will set INT1 flag ADCA1
+    AdcaRegs.ADCINTSEL1N2.bit.INT1E = 1; //enable INT1 flag
+    AdcaRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //make sure INT1 flag is cleared
+    //ADCB
+    AdcbRegs.ADCSOC0CTL.bit.CHSEL = 4; //SOC0 will convert Channel you choose Does not have to be B0
+    AdcbRegs.ADCSOC0CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcbRegs.ADCSOC0CTL.bit.TRIGSEL = 13;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC0
+//    AdcbRegs.ADCSOC1CTL.bit.CHSEL = ???; //SOC1 will convert Channel you choose Does not have to be B1
+//    AdcbRegs.ADCSOC1CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+//    AdcbRegs.ADCSOC1CTL.bit.TRIGSEL = ???;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC1
+//    AdcbRegs.ADCSOC2CTL.bit.CHSEL = ???; //SOC2 will convert Channel you choose Does not have to be B2
+//    AdcbRegs.ADCSOC2CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+//    AdcbRegs.ADCSOC2CTL.bit.TRIGSEL = ???;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC2
+//    AdcbRegs.ADCSOC3CTL.bit.CHSEL = ???; //SOC3 will convert Channel you choose Does not have to be B3
+//    AdcbRegs.ADCSOC3CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+//    AdcbRegs.ADCSOC3CTL.bit.TRIGSEL = ???;// EPWM5 ADCSOCA or another trigger you choose will trigger SOC3
+    AdcbRegs.ADCINTSEL1N2.bit.INT1SEL = 0; //set to last SOC that is converted and it will set INT1 flag ADCB1
+    AdcbRegs.ADCINTSEL1N2.bit.INT1E = 1; //enable INT1 flag
+    AdcbRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //make sure INT1 flag is cleared
+    //ADCD
+    AdcdRegs.ADCSOC0CTL.bit.CHSEL = 0; // set SOC0 to convert pin D0
+    AdcdRegs.ADCSOC0CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcdRegs.ADCSOC0CTL.bit.TRIGSEL = 13; // EPWM5 ADCSOCA will trigger SOC0
+    AdcdRegs.ADCSOC1CTL.bit.CHSEL = 1; //set SOC1 to convert pin D1
+    AdcdRegs.ADCSOC1CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    AdcdRegs.ADCSOC1CTL.bit.TRIGSEL = 13; // EPWM5 ADCSOCA will trigger SOC1
+    //AdcdRegs.ADCSOC2CTL.bit.CHSEL = ???; //set SOC2 to convert pin D2
+    //AdcdRegs.ADCSOC2CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    //AdcdRegs.ADCSOC2CTL.bit.TRIGSEL = ???; // EPWM5 ADCSOCA will trigger SOC2
+    //AdcdRegs.ADCSOC3CTL.bit.CHSEL = ???; //set SOC3 to convert pin D3
+    //AdcdRegs.ADCSOC3CTL.bit.ACQPS = 99; //sample window is acqps + 1 SYSCLK cycles = 500ns
+    //AdcdRegs.ADCSOC3CTL.bit.TRIGSEL = ???; // EPWM5 ADCSOCA will trigger SOC3
+    AdcdRegs.ADCINTSEL1N2.bit.INT1SEL = 1; //set to SOC1, the last converted, and it will set INT1 flag ADCD1
+    AdcdRegs.ADCINTSEL1N2.bit.INT1E = 1; //enable INT1 flag
+    AdcdRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //make sure INT1 flag is cleared
+    EDIS;
+}
+
 void DAC_setup(void) {
     // Enable DACA and DACB outputs
     EALLOW;
@@ -771,6 +842,8 @@ void main(void)
     IER |= M_INT13;
     IER |= M_INT14;
 
+    // LAB7: Enable ADCA1: Group 1 interrupt 1
+    PieCtrlRegs.PIEIER1.bit.INTx1 = 1;
     // Enable TINT0 in the PIE: Group 1 interrupt 7
     PieCtrlRegs.PIEIER1.bit.INTx7 = 1;
     // Enable SWI in the PIE: Group 12 interrupt 9
@@ -845,6 +918,46 @@ __interrupt void SWI_isr(void) {
     
     DINT;
 
+}
+
+__interrupt void ADCA_ISR(void) {
+    ADCA_interrupt_counter ++;
+
+    // Zero out filtered values
+    yk_A2 = 0;
+    yk_A3 = 0;
+
+    // Getting raw readings
+    ADCINA2_raw = AdcaResultRegs.ADCRESULT0; // NOT ADCRESULT2/3
+    ADCINA3_raw = AdcaResultRegs.ADCRESULT1;
+
+    // Converted voltage values
+    ADCINA2_volts = ADCINA2_raw * (3.0 / 4095.0);
+    ADCINA3_volts = ADCINA3_raw * (3.0 / 4095.0);
+
+    // FIR Filtering stuff
+    // Here covert ADCIND0, ADCIND1 to volts
+    xk_A2[0] = ADCINA2_volts;
+    xk_A3[0] = ADCINA3_volts;
+
+    for (int i = 0; i < N; i++) {
+        yk_A2 += b[i]*xk_A2[i];
+        yk_A3 += b[i]*xk_A3[i];
+    }
+
+    //Save past states before exiting from the function so that next sample they are the older state
+    for (int i = N-1; i > 0; i--) {
+        xk_A2[i] = xk_A2[i-1];
+        xk_A3[i] = xk_A3[i-1];
+    }
+
+    // Print ADCIND0’s voltage value to TeraTerm every 100ms
+    if (ADCA_interrupt_counter % 100 == 0) {
+        UARTPrint = 1;
+    }
+
+    AdcaRegs.ADCINTFLGCLR.bit.ADCINT1 = 1; //clear interrupt flag
+    PieCtrlRegs.PIEACK.all = PIEACK_GROUP1;
 }
 
 // cpu_timer0_isr - CPU Timer0 ISR
