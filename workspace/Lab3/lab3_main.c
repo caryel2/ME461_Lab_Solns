@@ -497,8 +497,8 @@ __interrupt void cpu_timer0_isr(void)
 __interrupt void cpu_timer1_isr(void)
 {
     // LAB3PART4
-    EPwm9Regs.TBPRD = songarray[songIndex]; // Change TBPRD, which changes the buzzer signal frequency, to current note in songarray
-    if (songIndex < SONG_LENGTH) { // If we are not at the end of the song, advance to next note
+    EPwm9Regs.TBPRD = song2array[songIndex]; // Change TBPRD, which changes the buzzer signal frequency, to current note in songarray
+    if (songIndex < SONG2_LENGTH) { // If we are not at the end of the song, advance to next note
         songIndex++;
     } else if (songIndex >= SONG_LENGTH) { // Else if song has ended, change pin back to a GPIO pin and set to low (to avoid noise)
         GPIO_SetupPinMux(16, GPIO_MUX_CPU1, 0);
